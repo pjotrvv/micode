@@ -1,0 +1,13 @@
+{
+  "name": "micode-v2",
+  "private": true,
+  "type": "module",
+  "main": "index.js",
+  "scripts": {
+    "test": "node test/auto-compact.test.js && node test/summarize.test.js"
+  },
+  "dependencies": {
+    "@opencode/plugin": "2.0.21",
+    "micode": "0.11.0"
+  }
+}
