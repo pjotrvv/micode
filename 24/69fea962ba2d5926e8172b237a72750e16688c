@@ -1,0 +1,24 @@
+src/hooks/mindmodel-injector.ts
+  h_5c0398d0e522e5 7-13,103-109,115-117
+src/mindmodel/index.ts
+  h_5c0398d0e522e5 3
+src/mindmodel/loader.ts
+  h_5c0398d0e522e5 2,8,21-22,36-140,152-165,195
+src/tools/mindmodel-lookup.ts
+  h_5c0398d0e522e5 5-11,17-31,33,38,43-74,78-83,106-110,115,123-126
+tests/mindmodel/loader.test.ts
+  h_5c0398d0e522e5 20-23,188-309
+tests/tools/mindmodel-lookup.test.ts
+  h_5c0398d0e522e5 1-88
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "2469fea962ba2d5926e8172b237a72750e16688c",
+  "prompts": {},
+  "humans": {
+    "h_5c0398d0e522e5": {
+      "author": "pjotrvv <vanveenpjotr@gmail.com>"
+    }
+  }
+}
