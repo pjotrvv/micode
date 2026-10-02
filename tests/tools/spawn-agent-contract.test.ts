@@ -61,28 +61,57 @@ describe("spawn_agent prompt/schema contract", () => {
       expect(prompt).toMatch(/spawn_agent\(\{[\s\S]*?agents:\s*\[/);
     },
   );
+
+  it.each(SPAWNING_AGENTS)("%s prompt shows every agent element complete, with a description", (_name, prompt) => {
+    // `description` is required by the schema, so an example that omits it
+    // documents a call that fails validation: the exact failure this suite
+    // exists to prevent.
+    const incomplete = prompt.match(/\{agent:\s*"[^"]+",\s*prompt:\s*"[^"]*"\s*\}/g) ?? [];
+    expect(incomplete).toEqual([]);
+  });
 });
 
 describe("spawn_agent runs its array concurrently", () => {
-  /** Builds a client whose sessions resolve after `delayMs`, recording overlaps. */
+  /**
+   * A client whose sessions resolve after `delayMs`.
+   *
+   * Each `create` captures its own id before awaiting, so concurrent tasks get
+   * distinct sessions and the whole lifecycle (create, prompt, messages) can be
+   * checked for overlap rather than just the create step.
+   */
   function slowClient(delayMs: number) {
-    const state = { inFlight: 0, maxInFlight: 0, started: 0 };
+    const state = { inFlight: 0, maxInFlight: 0, started: 0, prompted: [] as string[], read: [] as string[] };
+    const enter = (id: string) => {
+      state.inFlight++;
+      state.maxInFlight = Math.max(state.maxInFlight, state.inFlight);
+      return async () => {
+        await new Promise((resolve) => setTimeout(resolve, delayMs));
+        state.inFlight--;
+        return id;
+      };
+    };
     return {
       state,
       client: {
         session: {
           create: async () => {
-            state.started++;
-            state.inFlight++;
-            state.maxInFlight = Math.max(state.maxInFlight, state.inFlight);
-            await new Promise((resolve) => setTimeout(resolve, delayMs));
-            state.inFlight--;
-            return { data: { id: `ses_${state.started}` } };
+            const id = `ses_${++state.started}`;
+            return { data: { id: await enter(id)() } };
           },
-          prompt: async () => ({}),
-          messages: async () => ({
-            data: [{ info: { role: "assistant" }, parts: [{ type: "text", text: "done" }] }],
-          }),
+          prompt: async ({ path }: { path: { id: string } }) => {
+            const settle = enter(path.id);
+            state.prompted.push(path.id);
+            await settle();
+            return {};
+          },
+          messages: async ({ path }: { path: { id: string } }) => {
+            const settle = enter(path.id);
+            state.read.push(path.id);
+            await settle();
+            return {
+              data: [{ info: { role: "assistant" }, parts: [{ type: "text", text: `done:${path.id}` }] }],
+            };
+          },
         },
       },
     };
@@ -104,9 +133,15 @@ describe("spawn_agent runs its array concurrently", () => {
     );
 
     expect(state.started).toBe(3);
+    // Each task gets its own session: three distinct ids, not one shared one.
+    expect(new Set(state.prompted).size).toBe(3);
+    expect(new Set(state.read).size).toBe(3);
     // The whole point of the array: all three sessions in flight at once.
     expect(state.maxInFlight).toBe(3);
+    // Serialised execution would take 3 * 50ms per stage; concurrent runs ~50ms.
     expect(result).toContain("3 agents completed");
+    expect(result).toContain("done:ses_1");
+    expect(result).toContain("done:ses_3");
   });
 
   it("reports the flat form as a failure instead of spawning nothing silently", async () => {

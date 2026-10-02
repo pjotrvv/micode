@@ -295,9 +295,9 @@ Write(file_path="thoughts/shared/plans/2026-01-16-feature.md", content="...")
 
 <bad-example description="Over-researching - DON'T DO THIS">
 // WRONG: 18 subagent calls for a simple plan
-spawn_agent({agents: [{agent: "codebase-analyzer", prompt: "Read src/hooks/..."}]})  // Just use Read!
-spawn_agent({agents: [{agent: "codebase-locator", prompt: "Find existing files under thoughts/..."}]})  // Just use Glob!
-spawn_agent({agents: [{agent: "codebase-analyzer", prompt: "Read thoughts/shared/designs/..."}]})  // Just use Read!
+spawn_agent({agents: [{agent: "codebase-analyzer", prompt: "Read src/hooks/...", description: "Read hooks"}]})  // Just use Read!
+spawn_agent({agents: [{agent: "codebase-locator", prompt: "Find existing files under thoughts/...", description: "Find files"}]})  // Just use Glob!
+spawn_agent({agents: [{agent: "codebase-analyzer", prompt: "Read thoughts/shared/designs/...", description: "Read designs"}]})  // Just use Read!
 // ... 15 more unnecessary subagent calls
 </bad-example>
 
