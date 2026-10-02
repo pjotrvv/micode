@@ -1,0 +1,14 @@
+biome.json
+  h_5c0398d0e522e5 2
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "b1394ce096ea2eb05ec65cd9f34f3cac7a60e957",
+  "prompts": {},
+  "humans": {
+    "h_5c0398d0e522e5": {
+      "author": "pjotrvv <vanveenpjotr@gmail.com>"
+    }
+  }
+}
