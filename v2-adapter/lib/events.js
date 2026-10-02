@@ -1,4 +1,7 @@
-import { log, warnOnce } from "./log.js"
+import { log, warnOnce } from "./log.js";
+
+const RESUBSCRIBE_BACKOFF_MS = 250;
+const RESUBSCRIBE_MAX_BACKOFF_MS = 10_000;
 
 /**
  * Feed micode's v1 `event` hook from the v2 event stream.
@@ -22,18 +25,21 @@ import { log, warnOnce } from "./log.js"
  * threshold it could never act on.
  */
 export function bridgeEvents(ctx, hooks, state) {
-  const hook = hooks.event
-  if (typeof hook !== "function") return () => {}
+  const hook = hooks.event;
+  if (typeof hook !== "function") return () => {};
 
   if (typeof ctx.event?.subscribe !== "function") {
-    warnOnce("event-stream", "ctx.event.subscribe() is unavailable; micode's compaction, recovery and context-window hooks are inactive")
-    return () => {}
+    warnOnce(
+      "event-stream",
+      "ctx.event.subscribe() is unavailable; micode's compaction, recovery and context-window hooks are inactive",
+    );
+    return () => {};
   }
 
   // Withholding is the only honest option, and it is also what disarms the
   // trigger. `session.usage.updated` carries *cumulative* session usage (it
   // ships `cost` beside `tokens`, so both accrue for the life of the session),
-  // but micode divides them by a per-request context window — `computeUsageRatio`
+  // but micode divides them by a per-request context window: `computeUsageRatio`
   // is `(input + cache.read) / contextLimit`. That ratio is unbounded and passes
   // 1 within a few turns, so no `compactionThreshold` can hold it down; passing
   // the totals through would be a cumulative number wearing a per-request
@@ -43,44 +49,75 @@ export function bridgeEvents(ctx, hooks, state) {
   // `session.command("compact")` 404s, `synthetic` makes messages rather than
   // compactions, and `ctx.rpc` only reaches plugin-registered namespaces. micode's
   // context-window toast reads the same withheld field, so it goes quiet too.
-  const canCompact = typeof ctx.session?.compact === "function"
+  const canCompact = typeof ctx.session?.compact === "function";
   if (!canCompact) {
     warnOnce(
       "auto-compact-withheld",
       "Withholding token counts from message.updated: session.usage.updated is cumulative session usage rather than per-request context size, so micode's usage ratio exceeds any threshold; and a v2 plugin cannot request a compaction even when it does fire. OpenCode's own compaction.auto handles long sessions.",
-    )
+    );
   }
 
-  const controller = new AbortController()
+  const controller = new AbortController();
   void (async () => {
-    try {
-      for await (const event of ctx.event.subscribe({ signal: controller.signal })) {
-        const v1 = toV1Event(event, state, canCompact)
-        if (!v1) continue
-        try {
-          await hook({ event: v1 })
-        } catch (error) {
-          log(`event hook failed for ${event?.type}:`, error)
+    // The stream can end for reasons that have nothing to do with teardown: a
+    // stream reset, a transient connection error, a server restart. Exiting on
+    // the first one left all six bridged event hooks (auto-compact, session
+    // recovery, context-window monitor, truncation, file ops tracker, fetch
+    // tracker) dead for the rest of the plugin's life with only a log line to
+    // show for it. Resubscribe instead, backing off while not aborted.
+    let backoffMs = RESUBSCRIBE_BACKOFF_MS;
+    while (!controller.signal.aborted) {
+      try {
+        for await (const event of ctx.event.subscribe({ signal: controller.signal })) {
+          backoffMs = RESUBSCRIBE_BACKOFF_MS;
+          const v1 = toV1Event(event, state, canCompact);
+          if (!v1) continue;
+          try {
+            await hook({ event: v1 });
+          } catch (error) {
+            log(`event hook failed for ${event?.type}:`, error);
+          }
         }
+        if (controller.signal.aborted) return;
+        log("event stream closed; resubscribing");
+      } catch (error) {
+        if (controller.signal.aborted) return;
+        log(`event stream ended (${error?.message ?? error}); resubscribing in ${backoffMs}ms`);
       }
-    } catch (error) {
-      if (controller.signal.aborted) return
-      log("event stream ended:", error)
+      await sleep(backoffMs, controller.signal);
+      backoffMs = Math.min(backoffMs * 2, RESUBSCRIBE_MAX_BACKOFF_MS);
     }
-  })()
+  })();
 
-  log("subscribed to the session event stream")
-  return () => controller.abort()
+  log("subscribed to the session event stream");
+  return () => controller.abort();
+}
+
+/** Abort-aware delay, so teardown is not held up by a pending backoff. */
+function sleep(ms, signal) {
+  return new Promise((resolve) => {
+    if (signal.aborted) return resolve();
+    const timer = setTimeout(resolve, ms);
+    timer.unref?.();
+    signal.addEventListener(
+      "abort",
+      () => {
+        clearTimeout(timer);
+        resolve();
+      },
+      { once: true },
+    );
+  });
 }
 
 function toV1Event(event, state, canCompact) {
-  const data = event?.data ?? {}
+  const data = event?.data ?? {};
   switch (event?.type) {
     case "session.deleted":
-      return { type: "session.deleted", properties: { info: { id: data.sessionID } } }
+      return { type: "session.deleted", properties: { info: { id: data.sessionID } } };
 
     case "session.usage.updated": {
-      const model = state.models.get(data.sessionID)
+      const model = state.models.get(data.sessionID);
       return {
         type: "message.updated",
         properties: {
@@ -94,7 +131,7 @@ function toV1Event(event, state, canCompact) {
               : {}),
           },
         },
-      }
+      };
     }
 
     case "session.compaction.ended":
@@ -110,12 +147,12 @@ function toV1Event(event, state, canCompact) {
             tokens: { input: data.tokens?.input ?? 0, cache: { read: data.tokens?.cache?.read ?? 0 } },
           },
         },
-      }
+      };
 
     case "session.execution.failed":
-      return { type: "session.error", properties: { sessionID: data.sessionID, error: data.error } }
+      return { type: "session.error", properties: { sessionID: data.sessionID, error: data.error } };
 
     default:
-      return undefined
+      return undefined;
   }
 }

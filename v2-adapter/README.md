@@ -213,15 +213,18 @@ consider:
 ## Install
 
 ```sh
-git clone -b v2-adapter https://github.com/pjotrvv/micode.git
-cd micode/v2-adapter && npm install
+git clone -b v2-adapter https://github.com/pjotrvv/micode.git ~/.micode-v2
+cd ~/.micode-v2 && npm install
 ```
+
+Cloning straight into `~/.micode-v2` is what the test and upgrade commands below
+assume, so the adapter is installed and maintained in one place.
 
 Then point OpenCode at that directory in `~/.config/opencode/opencode.json`:
 
 ```json
 {
-  "plugins": ["/absolute/path/to/micode/v2-adapter"]
+  "plugins": ["~/.micode-v2"]
 }
 ```
 
@@ -268,10 +271,12 @@ works end to end: the v1 synchronous `session.prompt` → v2 admit-and-wait shim
 creates the child session, propagates its id back, surfaces provider errors
 immediately instead of hanging, and delivers the child's reply to the parent. A
 micode agent (`planner`) was spawned successfully this way. Permission
-resolution is confirmed against `agent.list`: every micode agent now seeds
-`*:allow` so unlisted actions inherit v1's permissive base, while read-only
-agents keep `edit`/`write`/`shell`/`subagent` denies, `.env` stays `ask`, and
-cc-safety-net's `browser:deny` still wins.
+resolution is confirmed against `agent.list`: every micode agent seeds the
+actions micode allows globally (plus `subagent`, which `spawn_agent` needs)
+rather than a blanket `*:allow`, so actions micode never allows keep the host
+default instead of being auto-approved. Read-only agents still carry their
+`edit`/`write`/`shell`/`subagent` denies, `.env` stays `ask`, and cc-safety-net's
+`browser:deny` still wins.
 
 Not verified: a full brainstorm→plan→implement run. That needs sustained
 provider capacity — `opencode/big-pickle`'s free tier rejects child sessions

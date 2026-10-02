@@ -1,5 +1,5 @@
-import { lastAssistantText, toV1Messages } from "./messages.js"
-import { log, warnOnce } from "./log.js"
+import { log, warnOnce } from "./log.js";
+import { lastAssistantText, toV1Messages } from "./messages.js";
 
 /**
  * A v1-shaped `ctx.client` backed by the v2 session domain.
@@ -21,7 +21,7 @@ import { log, warnOnce } from "./log.js"
  * receipt, so this shim waits for the session and reads the reply back, which
  * restores the v1 result shape.
  */
-export function createV1Client(ctx, state) {
+export function createV1Client(ctx) {
   const session = {
     async create({ body } = {}) {
       try {
@@ -29,18 +29,19 @@ export function createV1Client(ctx, state) {
           title: body?.title ?? undefined,
           agent: body?.agent ?? undefined,
           model: toV2Model(body?.model),
-        })
-        return { data: info }
+          parentID: body?.parentID ?? undefined,
+        });
+        return { data: info };
       } catch (error) {
-        log("session.create failed:", error)
-        return { error, data: undefined }
+        log("session.create failed:", error);
+        return { error, data: undefined };
       }
     },
 
     async prompt({ path, body } = {}) {
-      const sessionID = path?.id
-      if (!sessionID) return { data: undefined }
-      const text = partsToText(body?.parts) ?? body?.text ?? ""
+      const sessionID = path?.id;
+      if (!sessionID) return { data: undefined };
+      const text = partsToText(body?.parts) ?? body?.text ?? "";
       try {
         await ctx.session.prompt({
           sessionID,
@@ -48,37 +49,39 @@ export function createV1Client(ctx, state) {
           model: toV2Model(body?.model) ?? toV2Model(body),
           text,
           delivery: body?.delivery ?? undefined,
-        })
+        });
       } catch (error) {
-        log("session.prompt failed:", error)
-        return { data: undefined, error }
+        log("session.prompt failed:", error);
+        return { data: undefined, error };
       }
-      if (!state.waitForReply) return { data: { parts: [{ type: "text", text: "" }] } }
-      return { data: { parts: [{ type: "text", text: await waitForAssistantReply(ctx, sessionID) }] } }
+      return { data: { parts: [{ type: "text", text: await waitForAssistantReply(ctx, sessionID) }] } };
     },
 
     async messages({ path } = {}) {
-      const sessionID = path?.id
-      if (!sessionID) return { data: [] }
+      const sessionID = path?.id;
+      if (!sessionID) return { data: [] };
       try {
-        return { data: toV1Messages(await ctx.session.context({ sessionID }), sessionID) }
+        return { data: toV1Messages(await ctx.session.context({ sessionID }), sessionID) };
       } catch (error) {
-        log("session.messages failed:", error)
-        return { data: [] }
+        log("session.messages failed:", error);
+        return { data: [] };
       }
     },
 
     async delete({ path } = {}) {
       if (typeof ctx.session.remove !== "function") {
-        warnOnce("session-remove", "ctx.session.remove() is unavailable in this OpenCode build; micode child sessions are not deleted")
-        return { data: true }
+        warnOnce(
+          "session-remove",
+          "ctx.session.remove() is unavailable in this OpenCode build; micode child sessions are not deleted",
+        );
+        return { data: true };
       }
       try {
-        await ctx.session.remove({ sessionID: path?.id })
+        await ctx.session.remove({ sessionID: path?.id });
       } catch (error) {
-        log("session.delete failed:", error)
+        log("session.delete failed:", error);
       }
-      return { data: true }
+      return { data: true };
     },
 
     async summarize({ path } = {}) {
@@ -90,33 +93,33 @@ export function createV1Client(ctx, state) {
         warnOnce(
           "session-compact",
           "ctx.session.compact() is unavailable in this OpenCode build, so a summary cannot be requested. This is expected: v2 keeps session.compact on the client API but omits it from the plugin SessionDomain. OpenCode compacts on its own. If this keeps firing, the token counts that trigger it are not being withheld.",
-        )
+        );
         throw new Error(
           "compaction is not requestable from a v2 plugin (SessionDomain omits `compact`); OpenCode's own compaction.auto handles this session",
-        )
+        );
       }
       try {
-        await ctx.session.compact({ sessionID: path?.id })
+        await ctx.session.compact({ sessionID: path?.id });
       } catch (error) {
-        log("session.summarize failed:", error)
-        throw error
+        log("session.summarize failed:", error);
+        throw error;
       }
-      return { data: true }
+      return { data: true };
     },
 
     async abort({ path } = {}) {
       try {
-        await ctx.session.interrupt({ sessionID: path?.id, resume: false })
+        await ctx.session.interrupt({ sessionID: path?.id, resume: false });
       } catch (error) {
-        log("session.abort failed:", error)
+        log("session.abort failed:", error);
       }
-      return { data: true }
+      return { data: true };
     },
 
     async update() {
-      return { data: {} }
+      return { data: {} };
     },
-  }
+  };
 
   return {
     session,
@@ -124,41 +127,59 @@ export function createV1Client(ctx, state) {
     tui: {
       async showToast({ body } = {}) {
         // v2 server plugins have no toast API; keep the information in the log.
-        log(`toast[${body?.variant ?? "info"}] ${body?.title ?? ""}: ${body?.message ?? ""}`)
-        return { data: true }
+        log(`toast[${body?.variant ?? "info"}] ${body?.title ?? ""}: ${body?.message ?? ""}`);
+        return { data: true };
       },
     },
+  };
+}
+
+/**
+ * v1's synchronous `session.prompt` was bounded by the SDK client's own
+ * timeout. This shim waits on `ctx.session.wait`, which has none: a stalled
+ * generation or a session that stays busy would hang `session.prompt`
+ * forever, and with it the calling tool (`spawn_agent`, octto's probes). The
+ * wait is capped so a stuck child returns empty instead of wedging the parent.
+ */
+async function waitForAssistantReply(ctx, sessionID, timeoutMs = REPLY_TIMEOUT_MS) {
+  let timer;
+  try {
+    await Promise.race([
+      ctx.session.wait({ sessionID }),
+      new Promise((_, reject) => {
+        timer = setTimeout(() => reject(new Error(`session.wait timed out after ${timeoutMs}ms`)), timeoutMs);
+        timer.unref?.();
+      }),
+    ]);
+  } catch (error) {
+    log("session.wait failed:", error);
+    return "";
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+  try {
+    return lastAssistantText(await ctx.session.context({ sessionID }));
+  } catch (error) {
+    log("reading the reply failed:", error);
+    return "";
   }
 }
 
-async function waitForAssistantReply(ctx, sessionID) {
-  try {
-    await ctx.session.wait({ sessionID })
-  } catch (error) {
-    log("session.wait failed:", error)
-    return ""
-  }
-  try {
-    return lastAssistantText(await ctx.session.context({ sessionID }))
-  } catch (error) {
-    log("reading the reply failed:", error)
-    return ""
-  }
-}
+const REPLY_TIMEOUT_MS = 5 * 60 * 1000;
 
 function partsToText(parts) {
-  if (!Array.isArray(parts)) return undefined
+  if (!Array.isArray(parts)) return undefined;
   return parts
     .filter((part) => part?.type === "text" && typeof part.text === "string")
     .map((part) => part.text)
-    .join("\n")
+    .join("\n");
 }
 
 /** Accept both the nested `{model:{providerID,modelID}}` and flat v1 spellings. */
 function toV2Model(model) {
-  if (!model || typeof model !== "object") return undefined
-  const providerID = model.providerID
-  const id = model.id ?? model.modelID
-  if (!providerID || !id) return undefined
-  return model.variant ? { providerID, id, variant: model.variant } : { providerID, id }
+  if (!model || typeof model !== "object") return undefined;
+  const providerID = model.providerID;
+  const id = model.id ?? model.modelID;
+  if (!providerID || !id) return undefined;
+  return model.variant ? { providerID, id, variant: model.variant } : { providerID, id };
 }

@@ -1,4 +1,5 @@
-import { log } from "./log.js"
+import { log } from "./log.js";
+import { ACTION_ALIASES, globalAllowActions } from "./permissions.js";
 
 /**
  * Register micode's agents as v2 agents.
@@ -20,46 +21,50 @@ import { log } from "./log.js"
  * collected here and applied per request through the context hook.
  */
 export async function registerAgents(ctx, config, agentOptions) {
-  const agents = Object.entries(config.agent ?? {}).filter(([, agent]) => agent)
-  const available = await availableModels(ctx)
-  const pinned = new Map()
+  const agents = Object.entries(config.agent ?? {}).filter(([, agent]) => agent);
+  const available = await availableModels(ctx);
+  const pinned = new Map();
+  const base = baseActions(config.permission);
 
   await ctx.agent.transform((editor) => {
     for (const [name, agent] of agents) {
-      const model = resolveModel(agent.model, available)
+      const model = resolveModel(agent.model, available);
 
       editor.update(name, (draft) => {
-        if (agent.description) draft.description = agent.description
-        draft.mode = agent.mode ?? "all"
-        if (agent.prompt) draft.system = agent.prompt
+        if (agent.description) draft.description = agent.description;
+        draft.mode = agent.mode ?? "all";
+        if (agent.prompt) draft.system = agent.prompt;
         if (model) {
-          draft.model = model
-          pinned.set(name, `${model.providerID}/${model.id}`)
+          draft.model = model;
+          pinned.set(name, `${model.providerID}/${model.id}`);
         }
-        const rules = permissionRules(agent.permission, agent.tools)
-        if (rules.length > 0) draft.permissions = rules
-      })
+        const rules = permissionRules(agent.permission, agent.tools, base);
+        if (rules.length > 0) draft.permissions = rules;
+      });
 
       agentOptions.set(name, {
         temperature: agent.temperature,
         maxTokens: agent.maxTokens,
         thinking: agent.thinking,
-      })
+      });
     }
 
     // micode makes its primary agent the entry point unless the user chose one.
-    const preferred = config.default_agent
-    if (preferred && editor.get(preferred)) editor.default(preferred)
-  })
+    const preferred = config.default_agent;
+    if (preferred && editor.get(preferred)) editor.default(preferred);
+  });
 
-  log(`registered ${agents.length} agent(s)`)
+  log(`registered ${agents.length} agent(s)`);
   if (pinned.size > 0) {
-    const distinct = [...new Set(pinned.values())]
-    log(`agents pinned to a model: ${pinned.size} (${distinct.join(", ")})`)
+    const distinct = [...new Set(pinned.values())];
+    log(`agents pinned to a model: ${pinned.size} (${distinct.join(", ")})`);
   } else {
-    log("agents inherit the session model (micode's configured model is unavailable)")
+    log("agents inherit the session model (micode's configured model is unavailable)");
   }
-  await verifyAgents(ctx, agents.map(([name]) => name))
+  await verifyAgents(
+    ctx,
+    agents.map(([name]) => name),
+  );
 }
 
 /**
@@ -68,43 +73,51 @@ export async function registerAgents(ctx, config, agentOptions) {
  */
 async function verifyAgents(ctx, names) {
   try {
-    const listed = await ctx.agent.list()
-    const ids = new Set((Array.isArray(listed) ? listed : (listed?.data ?? [])).map((agent) => agent.id))
-    const missing = names.filter((name) => !ids.has(name))
-    if (missing.length > 0) log(`WARNING agents missing from the registry: ${missing.join(", ")}`)
+    const listed = await ctx.agent.list();
+    const ids = new Set((Array.isArray(listed) ? listed : (listed?.data ?? [])).map((agent) => agent.id));
+    const missing = names.filter((name) => !ids.has(name));
+    if (missing.length > 0) log(`WARNING agents missing from the registry: ${missing.join(", ")}`);
   } catch (error) {
-    log("could not verify the registered agents:", error)
+    log("could not verify the registered agents:", error);
   }
 }
 
 /** `provider/model[#variant]` -> v2 model reference, or undefined when unknown. */
 function resolveModel(model, available) {
-  if (typeof model !== "string" || !model.includes("/")) return undefined
-  const [head, ...rest] = model.split("/")
-  const providerID = head
-  const id = rest.join("/")
-  const [modelID, variant] = id.split("#")
-  if (available.size > 0 && !available.has(`${providerID}/${modelID}`)) return undefined
-  return variant ? { providerID, id: modelID, variant } : { providerID, id: modelID }
+  if (typeof model !== "string" || !model.includes("/")) return undefined;
+  const [head, ...rest] = model.split("/");
+  const providerID = head;
+  const id = rest.join("/");
+  const [modelID, variant] = id.split("#");
+  if (available.size > 0 && !available.has(`${providerID}/${modelID}`)) return undefined;
+  return variant ? { providerID, id: modelID, variant } : { providerID, id: modelID };
 }
 
 async function availableModels(ctx) {
   try {
-    const listed = await ctx.model.list()
-    const data = Array.isArray(listed) ? listed : (listed?.data ?? [])
-    const keys = new Set(data.map((model) => `${model.providerID}/${model.id}`))
-    log(`model registry: ${keys.size} model(s)`)
-    return keys
+    const listed = await ctx.model.list();
+    const data = Array.isArray(listed) ? listed : (listed?.data ?? []);
+    const keys = new Set(data.map((model) => `${model.providerID}/${model.id}`));
+    log(`model registry: ${keys.size} model(s)`);
+    return keys;
   } catch (error) {
-    log("could not list models, agent models are passed through unchecked:", error)
-    return new Set()
+    log("could not list models, agent models are passed through unchecked:", error);
+    return new Set();
   }
 }
 
-/** v1 permission actions -> v2 actions. */
-const ACTION_ALIASES = {
-  bash: "shell",
-  task: "subagent",
+/**
+ * The v2 actions every micode agent may take, derived from the same global
+ * `config.permission` micode sets in v1, so agent rules and the global hook
+ * cannot drift apart.
+ */
+function baseActions(permission) {
+  const actions = globalAllowActions(permission);
+  // v1's `task` is what `spawn_agent` and octto's probes call. Without it the
+  // host default (`ask`) prompts on every spawn, for the agents whose whole
+  // job is spawning.
+  actions.add("subagent");
+  return actions;
 }
 
 /**
@@ -112,33 +125,30 @@ const ACTION_ALIASES = {
  * restrictions collapse into one ordered list of v2 rules. v1 had one effect
  * per action, so no ordering conflict exists between them.
  *
- * The seeded `*:allow` restores the v1 base. v1 resolved an agent's permissions
- * against a permissive default and let only that agent's own declarations
- * narrow it, but `editor.update()` *replaces* v2's base policy rather than
- * layering on it — so an action the agent never names has nothing to match and
- * falls through to `ask`. That is how `subagent` came to prompt on every spawn
- * for commander, executor and planner, which breaks the one thing those agents
- * exist to do. Seeding the base leaves micode's own denies (and the user's
- * config and cc-safety-net, which resolve later) able to override it, because
- * v2 takes the last matching rule.
+ * `base` restores v1's permissive baseline, which `editor.update()` otherwise
+ * replaces wholesale rather than layering on. Actions outside `base` are left
+ * undeclared on purpose: they keep the host default instead of being
+ * auto-approved. The agent's own rules come after and win, so micode's denies
+ * still apply, and the user's config and cc-safety-net resolve later still.
  */
-function permissionRules(permission, tools) {
-  const rules = new Map([["*", "allow"]])
+function permissionRules(permission, tools, base) {
+  const rules = new Map();
+  for (const action of base) rules.set(action, "allow");
   const set = (action, effect) => {
-    if (!action) return
-    const name = ACTION_ALIASES[action] ?? action
-    if (!rules.has(name)) rules.set(name, effect)
-  }
+    if (!action) return;
+    const name = ACTION_ALIASES[action] ?? action;
+    if (!rules.has(name)) rules.set(name, effect);
+  };
 
   for (const [action, effect] of Object.entries(permission ?? {})) {
-    if (effect === "allow" || effect === "deny" || effect === "ask") set(action, effect)
+    if (effect === "allow" || effect === "deny" || effect === "ask") set(action, effect);
   }
 
   for (const [name, enabled] of Object.entries(tools ?? {})) {
-    if (enabled !== false) continue
-    if (name === "spawn_agent") continue // a micode tool, not a permission
-    set(name, "deny")
+    if (enabled !== false) continue;
+    if (name === "spawn_agent") continue; // a micode tool, not a permission
+    set(name, "deny");
   }
 
-  return [...rules].map(([action, effect]) => ({ action, resource: "*", effect }))
+  return [...rules].map(([action, effect]) => ({ action, resource: "*", effect }));
 }

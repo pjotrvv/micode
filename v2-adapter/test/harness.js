@@ -6,26 +6,27 @@
  * deliberately absent: that is the real state of `SessionDomain` in 2.0.21, and
  * the tests depend on that.
  */
-import adapter from "../index.js"
+import adapter from "../index.js";
+import { flushLog } from "../lib/log.js";
 
 /** Deferred, so `subscribe` can stay open until the test closes it. */
 function channel() {
-  const waiting = []
+  const waiting = [];
   return {
     push(event) {
-      const next = waiting.shift()
-      if (next) next({ value: event })
+      const next = waiting.shift();
+      if (next) next({ value: event });
     },
     close() {
-      for (const next of waiting.splice(0)) next({ done: true })
+      for (const next of waiting.splice(0)) next({ done: true });
     },
     [Symbol.asyncIterator]() {
       return {
         next: () => new Promise((resolve) => waiting.push(resolve)),
         return: () => Promise.resolve({ done: true }),
-      }
+      };
     },
-  }
+  };
 }
 
 /** A transform's editor: drafts come from whatever is already registered. */
@@ -33,14 +34,14 @@ function agentEditor(registry) {
   return {
     get: (id) => registry.entries.get(id),
     default: (id) => {
-      registry.setDefault(id)
+      registry.setDefault(id);
     },
     update(id, apply) {
-      const draft = registry.entries.get(id) ?? {}
-      apply(draft)
-      registry.entries.set(id, draft)
+      const draft = registry.entries.get(id) ?? {};
+      apply(draft);
+      registry.entries.set(id, draft);
     },
-  }
+  };
 }
 
 function namedEditor(registry, name = "entries") {
@@ -50,31 +51,31 @@ function namedEditor(registry, name = "entries") {
     set: (id, entry) => registry[name].set(id, entry),
     update: (id, entry) => registry[name].set(id, { ...entry, name: id }),
     remove: (id) => registry[name].delete(id),
-  }
+  };
 }
 
 export async function opencode({ location = {}, session = {}, messages = [] } = {}) {
   // `ctx.session.context()` returns the session's message list, per SessionApi.
-  const sessionMessages = messages
-  const agents = { entries: new Map(), default: undefined }
+  const sessionMessages = messages;
+  const agents = { entries: new Map(), default: undefined };
   agents.setDefault = (id) => {
-    agents.default = id
-  }
+    agents.default = id;
+  };
 
-  const commands = { entries: new Map() }
-  const tools = { entries: new Map() }
-  const mcp = { entries: new Map() }
-  const stream = channel()
+  const commands = { entries: new Map() };
+  const tools = { entries: new Map() };
+  const mcp = { entries: new Map() };
+  const stream = channel();
 
-  const hooks = { session: new Map(), tool: new Map(), permission: new Map() }
-  const events = []
-  const disposals = new Map()
+  const hooks = { session: new Map(), tool: new Map(), permission: new Map() };
+  const events = [];
+  const disposals = new Map();
 
-  const on = (registry, kind, name, handler) => {
-    if (!registry.has(name)) registry.set(name, [])
-    registry.get(name).push(handler)
-    return { dispose: async () => registry.get(name).splice(registry.get(name).indexOf(handler), 1) }
-  }
+  const on = (registry, name, handler) => {
+    if (!registry.has(name)) registry.set(name, []);
+    registry.get(name).push(handler);
+    return { dispose: async () => registry.get(name).splice(registry.get(name).indexOf(handler), 1) };
+  };
 
   const ctx = {
     app: { version: "2.0.21" },
@@ -114,8 +115,8 @@ export async function opencode({ location = {}, session = {}, messages = [] } = 
 
     event: {
       subscribe: ({ signal } = {}) => {
-        signal?.addEventListener("abort", () => stream.close())
-        return stream
+        signal?.addEventListener("abort", () => stream.close());
+        return stream;
       },
     },
 
@@ -125,22 +126,24 @@ export async function opencode({ location = {}, session = {}, messages = [] } = 
     events,
 
     async emit(event) {
-      events.push(event)
-      stream.push(event)
+      events.push(event);
+      stream.push(event);
       // Hooks are awaited by the bridge, but the emit call is not; give the
       // bridge a turn so a test can assert on what it did.
-      await new Promise((resolve) => setImmediate(resolve))
-      await new Promise((resolve) => setTimeout(resolve, 50))
+      await new Promise((resolve) => setImmediate(resolve));
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      // Logging is buffered, so a test reading the log back needs it on disk.
+      flushLog();
     },
-  }
+  };
 
-  return ctx
+  return ctx;
 }
 
 /** Run the adapter's `setup` against a stub host and return its disposer. */
 export async function plugin(ctx) {
-  const stop = await adapter.setup(ctx)
+  const stop = await adapter.setup(ctx);
   return async () => {
-    await stop?.()
-  }
+    await stop?.();
+  };
 }

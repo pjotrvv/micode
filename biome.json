@@ -7,7 +7,7 @@
   },
   "files": {
     "ignoreUnknown": false,
-    "includes": ["**", "!tests/e2e/fixture"]
+    "includes": ["**", "!tests/e2e/fixture", "!v2-adapter"]
   },
   "formatter": {
     "enabled": true,
