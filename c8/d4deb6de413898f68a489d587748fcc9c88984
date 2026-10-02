@@ -1,0 +1,24 @@
+src/agents/design-fragment.ts
+  h_5c0398d0e522e5 1-113
+src/plugin-commands.ts
+  h_5c0398d0e522e5 1-41
+src/tools/known-tools.ts
+  h_5c0398d0e522e5 1-60
+tests/agents/design-fragment.test.ts
+  h_5c0398d0e522e5 1-58
+tests/plugin-commands.test.ts
+  h_5c0398d0e522e5 1-34
+tests/tools/known-tools.test.ts
+  h_5c0398d0e522e5 1-44
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "c8d4deb6de413898f68a489d587748fcc9c88984",
+  "prompts": {},
+  "humans": {
+    "h_5c0398d0e522e5": {
+      "author": "pjotrvv <vanveenpjotr@gmail.com>"
+    }
+  }
+}
