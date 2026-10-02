@@ -1,0 +1,22 @@
+v2-adapter/README.md
+  h_5c0398d0e522e5 217,223-225,234-274,293-296
+v2-adapter/index.js
+  h_5c0398d0e522e5 12,86-89
+v2-adapter/lib/micode.js
+  h_5c0398d0e522e5 1-58
+v2-adapter/package.json
+  h_5c0398d0e522e5 7-9
+v2-adapter/test/local-build.test.js
+  h_5c0398d0e522e5 1-73
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "b4894be422afd79c576cea40e09709c0484fd054",
+  "prompts": {},
+  "humans": {
+    "h_5c0398d0e522e5": {
+      "author": "pjotrvv <vanveenpjotr@gmail.com>"
+    }
+  }
+}
