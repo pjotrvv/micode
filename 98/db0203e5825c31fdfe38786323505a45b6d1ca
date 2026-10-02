@@ -1,0 +1,16 @@
+v2-adapter/lib/agents.js
+  h_5c0398d0e522e5 131-139,142,145,158-160
+v2-adapter/lib/events.js
+  h_5c0398d0e522e5 100-114,116
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "98db0203e5825c31fdfe38786323505a45b6d1ca",
+  "prompts": {},
+  "humans": {
+    "h_5c0398d0e522e5": {
+      "author": "pjotrvv <vanveenpjotr@gmail.com>"
+    }
+  }
+}
