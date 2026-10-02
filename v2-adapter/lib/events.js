@@ -120,8 +120,12 @@ function sleep(ms, signal) {
 function toV1Event(event, state, canCompact) {
   const data = event?.data ?? {};
   switch (event?.type) {
-    case "session.deleted":
-      return { type: "session.deleted", properties: { info: { id: data.sessionID } } };
+    case "session.deleted": {
+      // 2.0.21 sends `{ sessionID }`, but read the record shape too so a build
+      // that wraps the session record in `info` still clears per-session state.
+      const id = data.info?.id ?? data.sessionID;
+      return { type: "session.deleted", properties: { info: { id } } };
+    }
 
     case "session.usage.updated": {
       const model = state.models.get(data.sessionID);
