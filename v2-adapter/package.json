@@ -4,7 +4,9 @@
   "type": "module",
   "main": "index.js",
   "scripts": {
-    "test": "node test/auto-compact.test.js && node test/summarize.test.js"
+    "build": "bun run --cwd .. build",
+    "pretest": "bun run build",
+    "test": "node test/local-build.test.js && node test/auto-compact.test.js && node test/summarize.test.js"
   },
   "dependencies": {
     "@opencode/plugin": "2.0.21",

@@ -214,11 +214,14 @@ consider:
 
 ```sh
 git clone -b v2-adapter https://github.com/pjotrvv/micode.git ~/.micode-v2
-cd ~/.micode-v2 && npm install
+cd ~/.micode-v2 && bun install && bun run build
 ```
 
 Cloning straight into `~/.micode-v2` is what the test and upgrade commands below
 assume, so the adapter is installed and maintained in one place.
+
+`bun run build` is not optional if you want to edit micode itself — see
+[Which micode gets loaded](#which-micode-gets-loaded).
 
 Then point OpenCode at that directory in `~/.config/opencode/opencode.json`:
 
@@ -228,12 +231,47 @@ Then point OpenCode at that directory in `~/.config/opencode/opencode.json`:
 }
 ```
 
-The adapter loads micode itself from npm (`micode@0.11.0`), so `npm install`
-pulls the published package as a dependency rather than using the sibling
-`src/` in this repository. Upstream's `src/` is left untouched on purpose: the
-adapter is a shim around the released plugin, not a fork of its source, so
-`git fetch upstream` stays clean and a future micode release can be picked up
-with `npm update micode` instead of a rebase.
+## Which micode gets loaded
+
+`lib/micode.js` resolves the implementation at setup, in this order:
+
+1. `<repo>/dist/index.js`, if it exists — your own `src/`, bundled
+2. `node_modules/micode` — the published package
+
+`dist/` is gitignored, so a clone without a build resolves to npm and behaves
+exactly as before. That fallback is deliberate: the adapter is a shim around the
+released plugin, not a fork of its source, so `git fetch upstream` stays clean
+and a release can be picked up with `npm update micode`.
+
+But the fallback has a sharp edge worth stating plainly. **Agent prompts are
+data.** `src/agents/*.ts` holds strings handed to a model, and the model obeys
+whichever copy the *loaded* bundle carries — so a prompt fixed in `src/` and
+shipped from `node_modules` is a prompt that changes nothing.
+
+That is not hypothetical. The array-form `spawn_agent` contract was corrected in
+`src/agents/{executor,planner,project-initializer}.ts` while the adapter was
+still loading the published bundle, which still taught the flat
+`spawn_agent(agent=…, prompt=…, description=…)` form. Every one of those prompts
+failed schema validation and spawned zero agents. The contract tests passed,
+because they test `src/`. Batched execution ran nothing and said nothing.
+
+So after changing anything under `src/`:
+
+```sh
+bun run build
+```
+
+`npm test` in this directory runs that build first (`pretest`), so the test
+suite cannot pass against a stale `dist/`. `test/local-build.test.js` asserts
+which copy is loaded and whether it teaches the current contract — it fails if
+the local build stops winning, or if `dist/` drifts back to the flat form.
+
+Startup logs which copy it took:
+
+```
+[micode-v2] loading micode from the local build; run `bun run build` to refresh it …
+[micode-v2] no local build found; loading micode from node_modules …
+```
 
 No `"micode"` entry in `"plugin"` — that is the v1 key, and loading micode from
 it is what produced `Plugin must export a default definition…`.
@@ -252,6 +290,10 @@ compact, the hook stands down; on one that can, the token counts still arrive
 and the hook fires and reaches `session.compact`. `test/summarize.test.js`
 covers the fail-fast behaviour above: `summarize()` rejects on a host without
 compaction, and still forwards the session id when compaction is available.
+`test/local-build.test.js` covers the resolution order described above: that a
+local build is found, that it is the current bundle, and that it teaches the
+array-form `spawn_agent` contract rather than the flat form that silently
+spawned nothing.
 
 ## Status
 

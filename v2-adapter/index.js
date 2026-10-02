@@ -3,13 +3,13 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { Plugin } from "@opencode/plugin";
 import { parse as parseJsonc } from "jsonc-parser";
-import { OpenCodeConfigPlugin } from "micode";
 import { registerAgents } from "./lib/agents.js";
 import { createV1Client } from "./lib/client.js";
 import { registerCommands } from "./lib/commands.js";
 import { bridgeEvents } from "./lib/events.js";
 import { bridgeHooks } from "./lib/hooks.js";
 import { log } from "./lib/log.js";
+import { loadMicode } from "./lib/micode.js";
 import { registerMcp } from "./lib/mcp.js";
 import { registerPermissions } from "./lib/permissions.js";
 import { registerTools } from "./lib/tools.js";
@@ -83,6 +83,10 @@ export default Plugin.define({
     };
 
     // 1. Run the upstream v1 plugin with a v1-shaped context.
+    //    Resolved dynamically: a local `dist/` build wins over node_modules, so a
+    //    fix in this repository's `src/` reaches the running plugin instead of
+    //    being shadowed by the published bundle. See lib/micode.js.
+    const OpenCodeConfigPlugin = await loadMicode();
     const client = createV1Client(ctx);
     const v1ctx = {
       directory: ctx.location.directory,
