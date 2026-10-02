@@ -97,16 +97,23 @@ export function bridgeEvents(ctx, hooks, state) {
 function sleep(ms, signal) {
   return new Promise((resolve) => {
     if (signal.aborted) return resolve();
-    const timer = setTimeout(resolve, ms);
+
+    // The listener has to go once the wait is done, or every retry that ends
+    // normally leaves a closure on the controller for the plugin's lifetime.
+    let timer
+    const onAbort = () => {
+      clearTimeout(timer);
+      finish();
+    };
+    const finish = () => {
+      clearTimeout(timer);
+      signal.removeEventListener("abort", onAbort);
+      resolve();
+    };
+
+    timer = setTimeout(finish, ms);
     timer.unref?.();
-    signal.addEventListener(
-      "abort",
-      () => {
-        clearTimeout(timer);
-        resolve();
-      },
-      { once: true },
-    );
+    signal.addEventListener("abort", onAbort, { once: true });
   });
 }
 

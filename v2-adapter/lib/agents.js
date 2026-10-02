@@ -128,16 +128,21 @@ function baseActions(permission) {
  * `base` restores v1's permissive baseline, which `editor.update()` otherwise
  * replaces wholesale rather than layering on. Actions outside `base` are left
  * undeclared on purpose: they keep the host default instead of being
- * auto-approved. The agent's own rules come after and win, so micode's denies
- * still apply, and the user's config and cc-safety-net resolve later still.
+ * auto-approved.
+ *
+ * The base is only a default, so the agent's own rules are collected separately
+ * and always win, including over a base allow. Seeding the base into the same
+ * map with a first-write-wins guard silently dropped every per-agent deny on an
+ * action that was already in the base, which handed read-only agents `edit` and
+ * `shell`; v2 takes the last matching rule, so ordering is what decides it.
+ * `subagent` is the exception: it is a base default that no agent declares, so
+ * it lands last and stays in effect.
  */
 function permissionRules(permission, tools, base) {
-  const rules = new Map();
-  for (const action of base) rules.set(action, "allow");
+  const own = new Map();
   const set = (action, effect) => {
     if (!action) return;
-    const name = ACTION_ALIASES[action] ?? action;
-    if (!rules.has(name)) rules.set(name, effect);
+    own.set(ACTION_ALIASES[action] ?? action, effect);
   };
 
   for (const [action, effect] of Object.entries(permission ?? {})) {
@@ -150,5 +155,8 @@ function permissionRules(permission, tools, base) {
     set(name, "deny");
   }
 
+  const rules = new Map();
+  for (const action of base) rules.set(action, "allow");
+  for (const [action, effect] of own) rules.set(action, effect);
   return [...rules].map(([action, effect]) => ({ action, resource: "*", effect }));
 }
